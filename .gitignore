@@ -1,0 +1,5 @@
+.idea/
+mounted_dir/
+files.db
+*.pyc
+
