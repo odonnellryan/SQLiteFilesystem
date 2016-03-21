@@ -4,6 +4,7 @@ import sys
 import errno
 from db import File
 from playhouse import shortcuts
+from peewee import IntegrityError
 from datetime import datetime
 from fuse import FUSE, FuseOSError, Operations
 
@@ -11,13 +12,13 @@ from fuse import FUSE, FuseOSError, Operations
 class Passthrough(Operations):
     def __init__(self):
         self.fd = 0
-        time = datetime.now()
-        now = time.hour * 3600 + time.minute * 60 + time.second
+        now = self._get_now()
         try:
+            # we need to create the db entry for the root
             File().create(path="/", dir=True, st_mode=(S_IFDIR | 0o0755), st_ctime=now,
                           st_mtime=now, st_atime=now, st_nlink=2)
-        except Exception as e:
-            print(e)
+        except IntegrityError:
+            pass
 
     @staticmethod
     def _get_now():
@@ -25,7 +26,6 @@ class Passthrough(Operations):
         return time.hour * 3600 + time.minute * 60 + time.second
 
     def access(self, path, mode):
-        print('access')
         file = File().select().where(File.path == path).first()
         if file is None:
             raise FuseOSError(errno.EACCES)
@@ -45,12 +45,9 @@ class Passthrough(Operations):
         try:
             file = File().select().where(File.path == path).first()
             return shortcuts.model_to_dict(file)
-        except Exception as e:
-            print(e)
+        except AttributeError as e:
             raise FuseOSError(errno.ENOENT)
 
-    def listxattr(self, path):
-        return 0
 
     def readdir(self, path, fh):
         path_length = len(path)
@@ -164,7 +161,7 @@ class Passthrough(Operations):
             contents = buf
             buf_length = len(buf)
         else:
-            text = str(File.contents)
+            text = file.contents
             contents = text[:offset] + buf.decode('utf-8')
             buf_length = len(contents)
         file.contents = contents
@@ -179,7 +176,7 @@ class Passthrough(Operations):
             file.save()
             return 0
         if file.contents:
-            file.contents = (file.contents[:length] + '..') if len(file.contents) > length else file.contents
+            file.contents = (file.contents[:length]) if len(file.contents) > length else file.contents
             file.save()
             return 0
 
